@@ -9,7 +9,6 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -33,12 +32,17 @@ public class JwtService {
 
     private final JwtProperties jwtProperties;
 
-    @Transactional(readOnly = true)
+    /**
+     * Builds an access token. The caller is responsible for passing a UserEntity
+     * with the {@code roles} collection already initialized (e.g. obtained via
+     * {@code UserRepository.findByIdWithRoles}). No transaction is opened here
+     * intentionally — opening one for a detached entity would either re-fetch
+     * lazily or, worse, return an empty roles set silently.
+     */
     public String generateAccessToken(UserEntity user) {
         return buildToken(user, jwtProperties.getAccessTtl(), TOKEN_TYPE_ACCESS);
     }
 
-    @Transactional(readOnly = true)
     public String generateRefreshToken(UserEntity user) {
         return buildToken(user, jwtProperties.getRefreshTtl(), TOKEN_TYPE_REFRESH);
     }

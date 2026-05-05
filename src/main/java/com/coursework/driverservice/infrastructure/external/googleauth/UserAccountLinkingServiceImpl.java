@@ -8,6 +8,7 @@ import com.coursework.driverservice.infrastructure.persistence.repository.RoleRe
 import com.coursework.driverservice.infrastructure.persistence.repository.UserRepository;
 import com.coursework.driverservice.infrastructure.web.exception.BusinessRuleException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserAccountLinkingServiceImpl implements UserAccountLinkingService {
@@ -42,12 +44,12 @@ public class UserAccountLinkingServiceImpl implements UserAccountLinkingService 
             UserEntity user = byEmail.get();
             user.setGoogleSubject(subject);
             applyProfile(user, email, payload);
+            ensureDefaultRole(user);
             userRepository.save(user);
             return userRepository.findByIdWithRoles(user.getId()).orElseThrow();
         }
 
-        RoleEntity driverRole = roleRepository.findByCode(RoleCode.DRIVER)
-                .orElseThrow(() -> new IllegalStateException("Role DRIVER is not seeded"));
+        RoleEntity driverRole = driverRole();
 
         UserEntity created = UserEntity.builder()
                 .email(email)
@@ -67,8 +69,31 @@ public class UserAccountLinkingServiceImpl implements UserAccountLinkingService 
             user.setEmail(email);
         }
         applyProfile(user, email, payload);
+        ensureDefaultRole(user);
         userRepository.save(user);
         return userRepository.findByIdWithRoles(user.getId()).orElseThrow();
+    }
+
+    /**
+     * Ensures the user has at least the DRIVER role.
+     * Protects against scenarios where the user_roles table was truncated
+     * (e.g. during DB cleanup) while the users row was preserved.
+     */
+    private void ensureDefaultRole(UserEntity user) {
+        if (user.getRoles() == null) {
+            user.setRoles(new HashSet<>());
+        }
+        boolean hasAnyRole = !user.getRoles().isEmpty();
+        if (!hasAnyRole) {
+            log.warn("User id={} email={} had no roles; assigning DRIVER",
+                    user.getId(), user.getEmail());
+            user.getRoles().add(driverRole());
+        }
+    }
+
+    private RoleEntity driverRole() {
+        return roleRepository.findByCode(RoleCode.DRIVER)
+                .orElseThrow(() -> new IllegalStateException("Role DRIVER is not seeded"));
     }
 
     private static void applyProfile(UserEntity user, String email, GoogleIdTokenPayload payload) {

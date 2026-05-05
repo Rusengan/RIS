@@ -21,7 +21,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,12 +38,14 @@ class UserAccountLinkingServiceImplTest {
     @Test
     void findOrCreate_returnsUser_whenFoundByGoogleSubject() {
         GoogleIdTokenPayload payload = samplePayload();
+        RoleEntity driverRole = RoleEntity.builder().id(1L).code(RoleCode.DRIVER).build();
         UserEntity existing = UserEntity.builder()
                 .id(10L)
                 .email("test@example.com")
                 .fullName("Existing")
                 .googleSubject(payload.subject())
                 .enabled(true)
+                .roles(new HashSet<>(Set.of(driverRole)))
                 .build();
         UserEntity withRoles = UserEntity.builder()
                 .id(10L)
@@ -52,7 +53,7 @@ class UserAccountLinkingServiceImplTest {
                 .fullName("Existing")
                 .googleSubject(payload.subject())
                 .enabled(true)
-                .roles(new HashSet<>())
+                .roles(new HashSet<>(Set.of(driverRole)))
                 .build();
 
         when(userRepository.findByGoogleSubject(payload.subject())).thenReturn(Optional.of(existing));
@@ -65,7 +66,42 @@ class UserAccountLinkingServiceImplTest {
         verify(userRepository, never()).findByEmail(anyString());
         verify(userRepository).save(existing);
         verify(userRepository).findByIdWithRoles(10L);
-        verifyNoInteractions(roleRepository);
+        // Role already present — no lookup needed
+        verify(roleRepository, never()).findByCode(any());
+    }
+
+    @Test
+    void findOrCreate_reassignsDriverRole_whenExistingUserHasNoRoles() {
+        // Simulates the case when user_roles table was truncated while the user row remained.
+        GoogleIdTokenPayload payload = samplePayload();
+        RoleEntity driverRole = RoleEntity.builder().id(1L).code(RoleCode.DRIVER).build();
+        UserEntity existing = UserEntity.builder()
+                .id(10L)
+                .email("test@example.com")
+                .fullName("Existing")
+                .googleSubject(payload.subject())
+                .enabled(true)
+                .roles(new HashSet<>())
+                .build();
+        UserEntity withRoles = UserEntity.builder()
+                .id(10L)
+                .email("test@example.com")
+                .fullName("Existing")
+                .googleSubject(payload.subject())
+                .enabled(true)
+                .roles(new HashSet<>(Set.of(driverRole)))
+                .build();
+
+        when(userRepository.findByGoogleSubject(payload.subject())).thenReturn(Optional.of(existing));
+        when(roleRepository.findByCode(RoleCode.DRIVER)).thenReturn(Optional.of(driverRole));
+        when(userRepository.findByIdWithRoles(10L)).thenReturn(Optional.of(withRoles));
+
+        UserEntity result = service.findOrCreate(payload);
+
+        assertThat(result).isSameAs(withRoles);
+        assertThat(existing.getRoles()).containsExactly(driverRole);
+        verify(roleRepository).findByCode(RoleCode.DRIVER);
+        verify(userRepository).save(existing);
     }
 
     @Test
@@ -86,8 +122,10 @@ class UserAccountLinkingServiceImplTest {
                 .roles(new HashSet<>())
                 .build();
 
+        RoleEntity driverRole = RoleEntity.builder().id(1L).code(RoleCode.DRIVER).build();
         when(userRepository.findByGoogleSubject(payload.subject())).thenReturn(Optional.empty());
         when(userRepository.findByEmail(payload.email().trim())).thenReturn(Optional.of(byEmail));
+        when(roleRepository.findByCode(RoleCode.DRIVER)).thenReturn(Optional.of(driverRole));
         when(userRepository.save(byEmail)).thenReturn(byEmail);
         when(userRepository.findByIdWithRoles(20L)).thenReturn(Optional.of(withRoles));
 
@@ -95,10 +133,12 @@ class UserAccountLinkingServiceImplTest {
 
         assertThat(result).isSameAs(withRoles);
         assertThat(byEmail.getGoogleSubject()).isEqualTo(payload.subject());
+        // ensureDefaultRole assigns DRIVER because byEmail arrived with no roles
+        assertThat(byEmail.getRoles()).containsExactly(driverRole);
         verify(userRepository).findByGoogleSubject(payload.subject());
         verify(userRepository).findByEmail(payload.email().trim());
         verify(userRepository).save(byEmail);
-        verify(roleRepository, never()).findByCode(any());
+        verify(roleRepository).findByCode(RoleCode.DRIVER);
     }
 
     @Test
