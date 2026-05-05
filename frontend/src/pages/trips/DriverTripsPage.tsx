@@ -68,7 +68,17 @@ export function DriverTripsPage() {
           )
         })}
       </div>
-      {trips.length === 0 && <p className="text-slate-500">Рейсов пока нет.</p>}
+      {tripsQuery.isLoading && (
+        <p className="text-sm text-slate-400">Загрузка…</p>
+      )}
+      {!tripsQuery.isLoading && trips.length === 0 && (
+        <div className="rounded-xl border border-slate-700 bg-slate-900/40 p-6 text-center text-sm text-slate-400">
+          <p className="font-medium text-slate-200">Рейсов пока нет.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Рейсы назначает диспетчер. Как только вам поставят рейс — он появится здесь.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

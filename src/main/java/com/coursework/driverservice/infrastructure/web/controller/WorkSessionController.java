@@ -164,6 +164,7 @@ public class WorkSessionController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Страница смен")
     })
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Page<WorkSessionDto> list(
             @Parameter(description = "Водитель") @RequestParam(required = false) Long driverId,
             @Parameter(description = "С") @RequestParam(required = false) Instant from,
@@ -177,8 +178,33 @@ public class WorkSessionController {
                 .and(WorkSessionSpecifications.startedBefore(to))
                 .and(WorkSessionSpecifications.hasStatus(status));
 
+        // Manual mapping (same reason as in /current): avoids LazyInitialization on BreakLogEntity.workSession.
         return workSessionRepository.findAll(spec, pageable)
-                .map(workSessionMapper::toDto);
+                .map(WorkSessionController::toDtoManually);
+    }
+
+    @GetMapping("/mine")
+    @PreAuthorize("hasRole('DRIVER')")
+    @Operation(summary = "Мои смены (водитель)")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Страница своих смен")
+    })
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Page<WorkSessionDto> mine(
+            @Parameter(description = "С") @RequestParam(required = false) Instant from,
+            @Parameter(description = "По") @RequestParam(required = false) Instant to,
+            @Parameter(description = "Статус") @RequestParam(required = false) WorkSessionStatus status,
+            Pageable pageable
+    ) {
+        Long driverId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Specification<WorkSessionEntity> spec = Specification
+                .where(WorkSessionSpecifications.hasDriverId(driverId))
+                .and(WorkSessionSpecifications.startedAfter(from))
+                .and(WorkSessionSpecifications.startedBefore(to))
+                .and(WorkSessionSpecifications.hasStatus(status));
+        log.info("GET /work-sessions/mine: driverId={}, status={}, from={}, to={}", driverId, status, from, to);
+        return workSessionRepository.findAll(spec, pageable)
+                .map(WorkSessionController::toDtoManually);
     }
 
     @PostMapping("/{id}/breaks/start")
