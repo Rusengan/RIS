@@ -16,10 +16,11 @@ function extractApiError(err: unknown, fallback: string): string {
 }
 
 async function fetchCurrent(): Promise<WorkSessionDto | null> {
+  // Accept 5xx as 'no data' so a backend hiccup doesn't lock the page in error state.
   const res = await apiClient.get<WorkSessionDto | null>('/api/v1/work-sessions/current', {
-    validateStatus: (s) => s === 200 || s === 204,
+    validateStatus: (s) => s === 200 || s === 204 || (s >= 500 && s < 600),
   })
-  if (res.status === 204 || res.data == null) return null
+  if (res.status !== 200 || res.data == null) return null
   return res.data
 }
 

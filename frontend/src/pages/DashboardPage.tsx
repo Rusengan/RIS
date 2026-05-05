@@ -30,11 +30,14 @@ export function DashboardPage() {
       {
         queryKey: ['work-sessions', 'current', 'dashboard'],
         enabled: isDriver,
+        retry: false,
         queryFn: async () => {
+          // Tolerate 204 (no session) and 5xx (backend error) — dashboard
+          // should render even if one sub-request fails.
           const res = await apiClient.get<WorkSessionDto | null>('/api/v1/work-sessions/current', {
-            validateStatus: (s) => s === 200 || s === 204,
+            validateStatus: (s) => s === 200 || s === 204 || (s >= 500 && s < 600),
           })
-          if (res.status === 204) return null
+          if (res.status !== 200) return null
           return res.data
         },
       },

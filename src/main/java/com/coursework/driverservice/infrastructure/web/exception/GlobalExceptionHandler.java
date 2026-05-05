@@ -3,6 +3,7 @@ package com.coursework.driverservice.infrastructure.web.exception;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -131,5 +133,21 @@ public class GlobalExceptionHandler {
         problem.setTitle("Forbidden");
         problem.setType(TYPE_FORBIDDEN);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
+    /**
+     * Catch-all so that any unhandled runtime exception is logged with full stack trace
+     * AND surfaced to the client as a structured ProblemDetail (instead of an empty 500 body).
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ProblemDetail> handleAny(Exception ex) {
+        log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                ex.getClass().getSimpleName() + ": " + (ex.getMessage() == null ? "" : ex.getMessage())
+        );
+        problem.setTitle("Internal Server Error");
+        problem.setType(URI.create("about:blank"));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
     }
 }

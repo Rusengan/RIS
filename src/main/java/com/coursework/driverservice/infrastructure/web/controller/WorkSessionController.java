@@ -6,6 +6,7 @@ import com.coursework.driverservice.application.command.StartWorkSessionCommand;
 import com.coursework.driverservice.application.handler.CloseWorkSessionCommandHandler;
 import com.coursework.driverservice.application.handler.StartBreakCommandHandler;
 import com.coursework.driverservice.application.handler.StartWorkSessionCommandHandler;
+import com.coursework.driverservice.infrastructure.persistence.entity.BreakLogEntity;
 import com.coursework.driverservice.infrastructure.persistence.entity.WorkSessionEntity;
 import com.coursework.driverservice.infrastructure.persistence.entity.WorkSessionStatus;
 import com.coursework.driverservice.infrastructure.persistence.repository.WorkSessionRepository;
@@ -42,6 +43,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/work-sessions")
@@ -99,17 +103,59 @@ public class WorkSessionController {
     })
     public ResponseEntity<WorkSessionDto> current() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        log.info("Current endpoint called by user: {}, authorities: {}",
-                auth != null ? auth.getPrincipal() : "null",
-                auth != null ? auth.getAuthorities() : "null");
-        Long driverId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        // JOIN FETCH version preloads breaks eagerly so the mapper can safely access
-        // the lazy collection. The @Transactional(readOnly = true) keeps the session
-        // open for any other lazy access just in case.
-        return workSessionRepository.findCurrentByDriverIdAndStatus(driverId, WorkSessionStatus.OPEN)
-                .map(workSessionMapper::toDto)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.noContent().build());
+        Long driverId = (Long) auth.getPrincipal();
+        log.info("GET /work-sessions/current: driverId={}, authorities={}",
+                driverId, auth.getAuthorities());
+
+        // We intentionally do not use MapStruct here. The previous implementation
+        // tripped over Hibernate's LazyInitializationException even with JOIN FETCH
+        // because BreakLogMapper accessed break.getWorkSession() which is a separate
+        // LAZY association on BreakLogEntity. Manual mapping inside the @Transactional
+        // method is bulletproof: every field read happens while the session is open.
+        Optional<WorkSessionEntity> found =
+                workSessionRepository.findCurrentByDriverIdAndStatus(driverId, WorkSessionStatus.OPEN);
+        if (found.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+        WorkSessionEntity ws = found.get();
+        WorkSessionDto dto = toDtoManually(ws);
+        log.info("GET /work-sessions/current: returning sessionId={}, breaks={}",
+                dto.id(), dto.breaks().size());
+        return ResponseEntity.ok(dto);
+    }
+
+    private static WorkSessionDto toDtoManually(WorkSessionEntity ws) {
+        Long driverIdLocal = (ws.getDriver() != null) ? ws.getDriver().getId() : null;
+        List<BreakLogDto> breakDtos = ws.getBreaks() == null
+                ? Collections.emptyList()
+                : ws.getBreaks().stream()
+                    .map(b -> mapBreak(b, ws.getId()))
+                    .toList();
+        return new WorkSessionDto(
+                ws.getId(),
+                driverIdLocal,
+                ws.getStartedAt(),
+                ws.getEndedAt(),
+                ws.getTotalMinutes(),
+                ws.getStatus(),
+                ws.getCreatedAt(),
+                ws.getUpdatedAt(),
+                breakDtos
+        );
+    }
+
+    private static BreakLogDto mapBreak(BreakLogEntity b, Long workSessionId) {
+        // Pass workSessionId explicitly so we never touch b.getWorkSession() (LAZY).
+        return new BreakLogDto(
+                b.getId(),
+                workSessionId,
+                b.getBreakType(),
+                b.getStartedAt(),
+                b.getEndedAt(),
+                b.getDurationMinutes(),
+                b.getCreatedAt(),
+                b.getUpdatedAt()
+        );
     }
 
     @GetMapping
