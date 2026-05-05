@@ -22,5 +22,8 @@ public interface VehicleMapper {
     VehicleDto toDto(VehicleEntity entity);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     void updateEntity(UpdateVehicleCommand command, @MappingTarget VehicleEntity entity);
 }

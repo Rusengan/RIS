@@ -16,6 +16,7 @@ import com.coursework.driverservice.infrastructure.web.mapper.UserProfileMapper;
 import io.jsonwebtoken.Claims;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -28,14 +29,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.io.IOException;
 import java.net.URI;
-import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Objects;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -70,40 +70,81 @@ public class AuthController {
 
     @GetMapping("/oauth2/callback")
     public ResponseEntity<Void> googleOAuthCallback(
-            @RequestParam String code,
-            @RequestParam String state
-    ) throws GeneralSecurityException, IOException {
-        String key = REDIS_STATE_PREFIX + state;
-        String storedNonce = stringRedisTemplate.opsForValue().get(key);
-        if (storedNonce == null) {
-            throw new BusinessRuleException("Invalid or expired OAuth state");
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String error
+    ) {
+        // Google may redirect with ?error=access_denied when the user cancels.
+        if (error != null && !error.isBlank()) {
+            log.warn("Google OAuth callback returned error: {}", error);
+            return redirectToFrontendWithError("google_" + error);
         }
-        stringRedisTemplate.delete(key);
-
-        GoogleTokenResponse tokens = googleOAuthService.exchangeCodeForTokens(code);
-        if (tokens.idToken() == null || tokens.idToken().isBlank()) {
-            throw new BusinessRuleException("Google token response has no id_token");
-        }
-
-        GoogleIdTokenPayload payload = googleOAuthService.verifyIdToken(tokens.idToken());
-        if (payload.nonce() == null || !Objects.equals(payload.nonce(), storedNonce)) {
-            throw new BusinessRuleException("Invalid OAuth nonce");
+        if (code == null || code.isBlank() || state == null || state.isBlank()) {
+            log.warn("OAuth callback missing required params (code/state)");
+            return redirectToFrontendWithError("missing_params");
         }
 
-        UserEntity user = userAccountLinkingService.findOrCreate(payload);
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+        try {
+            String key = REDIS_STATE_PREFIX + state;
+            String storedNonce = stringRedisTemplate.opsForValue().get(key);
+            if (storedNonce == null) {
+                log.warn("OAuth state not found in Redis or expired: {}", state);
+                return redirectToFrontendWithError("invalid_state");
+            }
+            stringRedisTemplate.delete(key);
 
-        String redirectUrl = UriComponentsBuilder.fromHttpUrl(frontendUrl)
-                .path("/auth/callback")
-                .queryParam("accessToken", accessToken)
-                .queryParam("refreshToken", refreshToken)
+            GoogleTokenResponse tokens = googleOAuthService.exchangeCodeForTokens(code);
+            if (tokens == null || tokens.idToken() == null || tokens.idToken().isBlank()) {
+                log.warn("Google token response has no id_token");
+                return redirectToFrontendWithError("no_id_token");
+            }
+
+            GoogleIdTokenPayload payload = googleOAuthService.verifyIdToken(tokens.idToken());
+            if (payload.nonce() == null || !Objects.equals(payload.nonce(), storedNonce)) {
+                log.warn("OAuth nonce mismatch for state {}", state);
+                return redirectToFrontendWithError("invalid_nonce");
+            }
+
+            UserEntity user = userAccountLinkingService.findOrCreate(payload);
+            String accessToken = jwtService.generateAccessToken(user);
+            String refreshToken = jwtService.generateRefreshToken(user);
+            log.info("OAuth login OK: userId={} email={} roles={}",
+                    user.getId(), user.getEmail(),
+                    user.getRoles() == null ? 0 : user.getRoles().size());
+
+            String redirectUrl = UriComponentsBuilder.fromHttpUrl(frontendUrl)
+                    .path("/auth/callback")
+                    .queryParam("accessToken", accessToken)
+                    .queryParam("refreshToken", refreshToken)
+                    .build()
+                    .toUriString();
+
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(redirectUrl))
+                    .build();
+        } catch (BusinessRuleException ex) {
+            log.warn("OAuth callback business error: {}", ex.getMessage());
+            return redirectToFrontendWithError("business:" + safeReason(ex.getMessage()));
+        } catch (Exception ex) {
+            log.error("OAuth callback failed unexpectedly", ex);
+            return redirectToFrontendWithError("server_error");
+        }
+    }
+
+    private ResponseEntity<Void> redirectToFrontendWithError(String reason) {
+        String url = UriComponentsBuilder.fromHttpUrl(frontendUrl)
+                .path("/login")
+                .queryParam("error", reason)
                 .build()
                 .toUriString();
-
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(redirectUrl))
+                .location(URI.create(url))
                 .build();
+    }
+
+    private static String safeReason(String message) {
+        if (message == null) return "unknown";
+        return message.replaceAll("[^A-Za-z0-9_\\-:.]", "_");
     }
 
     @PostMapping("/refresh")
