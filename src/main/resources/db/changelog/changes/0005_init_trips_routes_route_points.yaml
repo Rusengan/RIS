@@ -1,0 +1,222 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0005-recreate-trips-add-routes-route-points
+      author: coursework
+      changes:
+        - sql:
+            sql: DROP TABLE IF EXISTS route_points CASCADE
+        - sql:
+            sql: DROP TABLE IF EXISTS routes CASCADE
+        - sql:
+            sql: DROP TABLE IF EXISTS trips CASCADE
+        - createTable:
+            tableName: trips
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: driver_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: vehicle_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: dispatcher_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: work_session_id
+                  type: BIGINT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: status
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: planned_start_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actual_start_at
+                  type: TIMESTAMPTZ
+              - column:
+                  name: actual_end_at
+                  type: TIMESTAMPTZ
+              - column:
+                  name: total_distance_m
+                  type: INTEGER
+              - column:
+                  name: total_duration_s
+                  type: INTEGER
+              - column:
+                  name: cancel_reason
+                  type: VARCHAR(255)
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: trips
+            baseColumnNames: driver_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_trips_driver
+        - addForeignKeyConstraint:
+            baseTableName: trips
+            baseColumnNames: vehicle_id
+            referencedTableName: vehicles
+            referencedColumnNames: id
+            constraintName: fk_trips_vehicle
+        - addForeignKeyConstraint:
+            baseTableName: trips
+            baseColumnNames: dispatcher_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_trips_dispatcher
+        - addForeignKeyConstraint:
+            baseTableName: trips
+            baseColumnNames: work_session_id
+            referencedTableName: work_sessions
+            referencedColumnNames: id
+            constraintName: fk_trips_work_session
+        - createIndex:
+            indexName: idx_trips_driver_status
+            tableName: trips
+            columns:
+              - column:
+                  name: driver_id
+              - column:
+                  name: status
+        - createIndex:
+            indexName: idx_trips_status_planned
+            tableName: trips
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: planned_start_at
+        - createIndex:
+            indexName: idx_trips_vehicle
+            tableName: trips
+            columns:
+              - column:
+                  name: vehicle_id
+        - createTable:
+            tableName: routes
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: trip_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: encoded_polyline
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_distance_m
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_duration_s
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider
+                  type: VARCHAR(32)
+                  defaultValue: GOOGLE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: calculated_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: routes
+            baseColumnNames: trip_id
+            referencedTableName: trips
+            referencedColumnNames: id
+            constraintName: fk_routes_trip
+        - createTable:
+            tableName: route_points
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: trip_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sequence_no
+                  type: SMALLINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: address
+                  type: VARCHAR(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: latitude
+                  type: NUMERIC(9, 6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: longitude
+                  type: NUMERIC(9, 6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: point_type
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: arrived_at
+                  type: TIMESTAMPTZ
+        - sql:
+            sql: |
+              ALTER TABLE route_points
+              ADD CONSTRAINT fk_route_points_trip
+              FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+        - addUniqueConstraint:
+            tableName: route_points
+            columnNames: trip_id, sequence_no
+            constraintName: uk_route_points_trip_sequence

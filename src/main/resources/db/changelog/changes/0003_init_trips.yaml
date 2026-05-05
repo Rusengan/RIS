@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0003-create-trips
+      author: coursework
+      changes:
+        - createTable:
+            tableName: trips
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: vehicle_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: trips
+            baseColumnNames: vehicle_id
+            referencedTableName: vehicles
+            referencedColumnNames: id
+            constraintName: fk_trips_vehicle

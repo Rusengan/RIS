@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - include:
+      file: changes/0001_init_users_roles.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/0002_init_vehicles.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/0003_init_trips.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/0004_init_work_sessions_breaks.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/0005_init_trips_routes_route_points.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/0006_init_audit_logs.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,110 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0004-create-work-sessions-break-logs
+      author: coursework
+      changes:
+        - createTable:
+            tableName: work_sessions
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: driver_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ended_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: total_minutes
+                  type: INTEGER
+              - column:
+                  name: status
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: work_sessions
+            baseColumnNames: driver_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_work_sessions_driver
+        - createIndex:
+            tableName: work_sessions
+            indexName: idx_ws_driver_status
+            columns:
+              - column:
+                  name: driver_id
+              - column:
+                  name: status
+        - createIndex:
+            tableName: work_sessions
+            indexName: idx_ws_started
+            columns:
+              - column:
+                  name: started_at
+        - createTable:
+            tableName: break_logs
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: work_session_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ended_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: duration_minutes
+                  type: INTEGER
+              - column:
+                  name: break_type
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: break_logs
+            baseColumnNames: work_session_id
+            referencedTableName: work_sessions
+            referencedColumnNames: id
+            constraintName: fk_break_logs_work_session
+            onDelete: CASCADE
+        - createIndex:
+            tableName: break_logs
+            indexName: idx_break_session
+            columns:
+              - column:
+                  name: work_session_id
