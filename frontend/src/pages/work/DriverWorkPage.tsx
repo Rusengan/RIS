@@ -1,8 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import axios from 'axios'
 
 import { apiClient } from '../../lib/apiClient'
 import type { BreakLogDto, BreakType, WorkSessionDto } from '../../types/workSession'
+
+function extractApiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err) && err.response) {
+    const data = err.response.data as { detail?: string; title?: string } | undefined
+    if (data?.detail) return data.detail
+    if (data?.title) return data.title
+    return `${err.response.status} ${err.response.statusText}`
+  }
+  return fallback
+}
 
 async function fetchCurrent(): Promise<WorkSessionDto | null> {
   const res = await apiClient.get<WorkSessionDto | null>('/api/v1/work-sessions/current', {
@@ -38,32 +49,54 @@ export function DriverWorkPage() {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }, [session, tick])
 
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const invalidateCurrent = () => {
+    setActionError(null)
+    return qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] })
+  }
+
   const startMutation = useMutation({
     mutationFn: async () => {
       await apiClient.post('/api/v1/work-sessions/start')
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] }),
+    onSuccess: invalidateCurrent,
+    onError: async (err) => {
+      // 409 Conflict means there is already an open session.
+      // Re-fetch /current so the UI shows the existing one instead of the start button.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        setActionError(
+          'Смена уже открыта. Обновляю состояние…',
+        )
+        await qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] })
+        return
+      }
+      setActionError(extractApiError(err, 'Не удалось открыть смену'))
+    },
   })
 
   const closeMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiClient.post(`/api/v1/work-sessions/${id}/close`)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] }),
+    onSuccess: invalidateCurrent,
+    onError: (err) => setActionError(extractApiError(err, 'Не удалось закрыть смену')),
   })
 
   const startBreakMutation = useMutation({
     mutationFn: async ({ sessionId, breakType }: { sessionId: number; breakType: BreakType }) => {
       await apiClient.post(`/api/v1/work-sessions/${sessionId}/breaks/start`, { breakType })
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] }),
+    onSuccess: invalidateCurrent,
+    onError: (err) => setActionError(extractApiError(err, 'Не удалось начать перерыв')),
   })
 
   const endBreakMutation = useMutation({
     mutationFn: async (breakId: number) => {
       await apiClient.post(`/api/v1/breaks/${breakId}/end`)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['work-sessions', 'current'] }),
+    onSuccess: invalidateCurrent,
+    onError: (err) => setActionError(extractApiError(err, 'Не удалось завершить перерыв')),
   })
 
   const breaks = session?.breaks ?? []
@@ -76,6 +109,12 @@ export function DriverWorkPage() {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold text-white">Текущая смена</h2>
+
+      {actionError && (
+        <div className="rounded-md border border-amber-700 bg-amber-950/40 px-4 py-2 text-sm text-amber-200">
+          {actionError}
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-lg">
         {!session || session.status === 'CLOSED' ? (

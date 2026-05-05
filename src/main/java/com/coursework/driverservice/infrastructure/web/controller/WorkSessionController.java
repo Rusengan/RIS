@@ -31,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -90,6 +91,7 @@ public class WorkSessionController {
 
     @GetMapping("/current")
     @PreAuthorize("hasRole('DRIVER')")
+    @Transactional(readOnly = true)
     @Operation(summary = "Текущая открытая смена")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Есть открытая смена"),
@@ -97,11 +99,14 @@ public class WorkSessionController {
     })
     public ResponseEntity<WorkSessionDto> current() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
-        log.info("Current endpoint called by user: {}, authorities: {}", 
-                auth != null ? auth.getPrincipal() : "null", 
+        log.info("Current endpoint called by user: {}, authorities: {}",
+                auth != null ? auth.getPrincipal() : "null",
                 auth != null ? auth.getAuthorities() : "null");
         Long driverId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return workSessionRepository.findByDriverIdAndStatus(driverId, WorkSessionStatus.OPEN)
+        // JOIN FETCH version preloads breaks eagerly so the mapper can safely access
+        // the lazy collection. The @Transactional(readOnly = true) keeps the session
+        // open for any other lazy access just in case.
+        return workSessionRepository.findCurrentByDriverIdAndStatus(driverId, WorkSessionStatus.OPEN)
                 .map(workSessionMapper::toDto)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
